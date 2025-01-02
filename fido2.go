@@ -288,6 +288,7 @@ func SelectDevice(devs []*Device) (*Device, error) {
 					}
 					quit <- 0
 					chosenDev.mu.Unlock()
+					return
 				}
 			case <-timeout:
 				logger.Infof("reached timeout %d\n", index)
