@@ -275,14 +275,13 @@ func SelectDevice(devs []*Device, timeout time.Duration) (*Device, error) {
 		for {
 			select {
 			case <-tick:
-				logger.Infof("ticking %d\n", index)
 				var touched C.int
 				if cErr := C.fido_dev_get_touch_status(dev, &touched, 50); cErr != C.FIDO_OK {
 					logger.Errorf("%v", errors.Wrap(errFromCode(cErr), "failed to get touch status"))
 				}
 
-				logger.Infof("touch %d: %d\n", index, (touched))
 				if touched == 1 {
+					logger.Infof("touch %d: %d\n", index, (touched))
 					chosenDev.mu.Lock()
 					if chosenDev.device == nil {
 						chosenDev.device = devs[index]
