@@ -288,6 +288,7 @@ func SelectDevice(devs []*Device) (*Device, error) {
 					}
 					quit <- 0
 					chosenDev.mu.Unlock()
+					pollingDone <- 0
 					return
 				}
 			case <-timeout:
