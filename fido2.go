@@ -241,7 +241,7 @@ func NewDevice(path string) (*Device, error) {
 	}, nil
 }
 
-func SelectDevice(devs []*Device) (*Device, error) {
+func SelectDevice(devs []*Device, timeout time.Duration) (*Device, error) {
 	type syncedDevice struct {
 		device *Device
 		mu     sync.Mutex
@@ -252,7 +252,7 @@ func SelectDevice(devs []*Device) (*Device, error) {
 	pollingDone := make(chan int, len(devs))
 	quit := make(chan int)
 
-	timeout := time.After(5 * time.Second)
+	pollInterval := 200 * time.Millisecond
 
 	pollDevice := func(index int) {
 		dev, err := devs[index].open()
@@ -270,7 +270,8 @@ func SelectDevice(devs []*Device) (*Device, error) {
 			return
 		}
 
-		tick := time.Tick(200 * time.Millisecond)
+		tick := time.Tick(pollInterval)
+		after := time.After(timeout)
 		for {
 			select {
 			case <-tick:
@@ -291,7 +292,7 @@ func SelectDevice(devs []*Device) (*Device, error) {
 					pollingDone <- 0
 					return
 				}
-			case <-timeout:
+			case <-after:
 				logger.Infof("reached timeout %d\n", index)
 				C.fido_dev_cancel(dev)
 				pollingDone <- 0
