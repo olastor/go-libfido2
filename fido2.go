@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/pkg/errors"
@@ -238,6 +239,71 @@ func NewDevice(path string) (*Device, error) {
 	return &Device{
 		path: fmt.Sprintf("%s", path),
 	}, nil
+}
+
+func SelectDevice(devs []*Device) (*Device, error) {
+	type syncedDevice struct {
+		device *Device
+		mu     sync.Mutex
+	}
+
+	chosenDev := syncedDevice{}
+
+	pollingDone := make(chan int, len(devs))
+	quit := make(chan int)
+
+	timeout := time.After(5 * time.Second)
+
+	pollDevice := func(index int) {
+		dev, err := devs[index].open()
+		if err != nil {
+			pollingDone <- 0
+			return
+		}
+
+		defer devs[index].close(dev)
+
+		if r := int(C.fido_dev_get_touch_begin(dev)); r != C.FIDO_OK {
+			pollingDone <- 0
+			return
+		}
+
+		tick := time.Tick(200 * time.Millisecond)
+		for {
+			select {
+			case <-tick:
+				C.fido_dev_cancel(dev)
+				var touched C.int
+				if r := int(C.fido_dev_get_touch_status(dev, &touched, 50)); r != C.FIDO_OK {
+					// fmt.Fprintf(os.Stderr, "selectDev: fido_dev_get_touch_status %s: %s\n", C.fido_dev_info_path(di), C.fido_strerr(C.int(r)))
+				}
+
+				if touched == 1 {
+					chosenDev.mu.Lock()
+					if chosenDev.device == nil {
+						chosenDev.device = devs[index]
+					}
+					quit <- 0
+					chosenDev.mu.Unlock()
+				}
+			case <-timeout:
+			case <-quit:
+				C.fido_dev_cancel(dev)
+				pollingDone <- 0
+				return
+			}
+		}
+	}
+
+	for i := 0; i < len(devs); i++ {
+		pollDevice(i)
+	}
+
+	for i := 0; i < len(devs); i++ {
+		<-pollingDone
+	}
+
+	return chosenDev.device, nil
 }
 
 func (d *Device) open() (*C.fido_dev_t, error) {
