@@ -241,79 +241,76 @@ func NewDevice(path string) (*Device, error) {
 	}, nil
 }
 
+// SelectDevice
 func SelectDevice(devs []*Device, timeout time.Duration) (*Device, error) {
-	type syncedDevice struct {
-		device *Device
-		mu     sync.Mutex
-	}
+	selectedDev := &Device{}
+	done := make(chan int, len(devs))
 
-	chosenDev := syncedDevice{}
+	pollDevice := func(d *Device) {
+		// make sure each thread signals `done` before exiting
+		defer func() {
+			done <- 0
+		}()
 
-	pollingDone := make(chan int, len(devs))
-	quit := make(chan int)
-
-	pollInterval := 200 * time.Millisecond
-
-	pollDevice := func(index int) {
-		dev, err := devs[index].open()
+		dev, err := d.open()
 		if err != nil {
-			logger.Errorf("%v", errors.Wrap(err, "failed open device"))
-			pollingDone <- 0
+			logger.Errorf("%v", errors.Wrap(err, fmt.Sprintf("failed open device %s", d.path)))
 			return
 		}
 
-		defer devs[index].close(dev)
+		defer d.close(dev)
 
 		if cErr := C.fido_dev_get_touch_begin(dev); cErr != C.FIDO_OK {
-			logger.Errorf("%v", errors.Wrap(errFromCode(cErr), "failed to get touch begin"))
-			pollingDone <- 0
+			msg := fmt.Sprintf("failed to start selection for %s", d.path)
+			logger.Errorf("%v", errors.Wrap(errFromCode(cErr), msg))
 			return
 		}
 
-		tick := time.Tick(pollInterval)
+		tick := time.Tick(200 * time.Millisecond)
 		after := time.After(timeout)
 		for {
 			select {
 			case <-tick:
+				if selectedDev.path != "" {
+					logger.Debugf(fmt.Sprintf("stop polling: %s", d.path))
+					C.fido_dev_cancel(dev)
+					return
+				}
+
 				var touched C.int
 				if cErr := C.fido_dev_get_touch_status(dev, &touched, 50); cErr != C.FIDO_OK {
-					logger.Errorf("%v", errors.Wrap(errFromCode(cErr), "failed to get touch status"))
+					msg := fmt.Sprintf("failed to get touch status of %s", d.path)
+					logger.Errorf("%v", errors.Wrap(errFromCode(cErr), msg))
 				}
 
 				if touched == 1 {
-					logger.Infof("touch %d: %d\n", index, (touched))
-					chosenDev.mu.Lock()
-					if chosenDev.device == nil {
-						chosenDev.device = devs[index]
+					logger.Debugf(fmt.Sprintf("device touched: %s", d.path))
+					selectedDev.Lock()
+					if selectedDev.path == "" {
+						selectedDev.path = d.path
 					}
-					quit <- 0
-					chosenDev.mu.Unlock()
-					pollingDone <- 0
+					selectedDev.Unlock()
+					// call quit to stop polling for all devices
 					return
 				}
 			case <-after:
-				logger.Infof("reached timeout %d\n", index)
+				logger.Debugf(fmt.Sprintf("stop polling (timeout reached): %s", d.path))
 				C.fido_dev_cancel(dev)
-				pollingDone <- 0
-				return
-			case <-quit:
-				logger.Infof("quitting %d\n", index)
-				C.fido_dev_cancel(dev)
-				pollingDone <- 0
 				return
 			}
 		}
 	}
 
 	for i := 0; i < len(devs); i++ {
-		go pollDevice(i)
+		go pollDevice(devs[i])
 	}
 
+	// wait for all threads to finish
 	for i := 0; i < len(devs); i++ {
-		<-pollingDone
+		<-done
 	}
 
-	return chosenDev.device, nil
+	return selectedDev, nil
 }
 
 func (d *Device) open() (*C.fido_dev_t, error) {
