@@ -303,7 +303,7 @@ func SelectDevice(devs []*Device) (*Device, error) {
 	}
 
 	for i := 0; i < len(devs); i++ {
-		pollDevice(i)
+		go pollDevice(i)
 	}
 
 	for i := 0; i < len(devs); i++ {
