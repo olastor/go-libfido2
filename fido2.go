@@ -272,7 +272,6 @@ func SelectDevice(devs []*Device) (*Device, error) {
 		for {
 			select {
 			case <-tick:
-				C.fido_dev_cancel(dev)
 				var touched C.int
 				if r := int(C.fido_dev_get_touch_status(dev, &touched, 50)); r != C.FIDO_OK {
 					// fmt.Fprintf(os.Stderr, "selectDev: fido_dev_get_touch_status %s: %s\n", C.fido_dev_info_path(di), C.fido_strerr(C.int(r)))
