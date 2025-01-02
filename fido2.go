@@ -257,13 +257,15 @@ func SelectDevice(devs []*Device) (*Device, error) {
 	pollDevice := func(index int) {
 		dev, err := devs[index].open()
 		if err != nil {
+			logger.Errorf("%v", errors.Wrap(err, "failed open device"))
 			pollingDone <- 0
 			return
 		}
 
 		defer devs[index].close(dev)
 
-		if r := int(C.fido_dev_get_touch_begin(dev)); r != C.FIDO_OK {
+		if cErr := C.fido_dev_get_touch_begin(dev); cErr != C.FIDO_OK {
+			logger.Errorf("%v", errors.Wrap(errFromCode(cErr), "failed to get touch begin"))
 			pollingDone <- 0
 			return
 		}
@@ -273,10 +275,11 @@ func SelectDevice(devs []*Device) (*Device, error) {
 			select {
 			case <-tick:
 				var touched C.int
-				if r := int(C.fido_dev_get_touch_status(dev, &touched, 50)); r != C.FIDO_OK {
-					// fmt.Fprintf(os.Stderr, "selectDev: fido_dev_get_touch_status %s: %s\n", C.fido_dev_info_path(di), C.fido_strerr(C.int(r)))
+				if cErr := C.fido_dev_get_touch_status(dev, &touched, 50); cErr != C.FIDO_OK {
+					logger.Errorf("%v", errors.Wrap(errFromCode(cErr), "failed to get touch status"))
 				}
 
+				logger.Infof("touch %d: %d\n", index, (touched))
 				if touched == 1 {
 					chosenDev.mu.Lock()
 					if chosenDev.device == nil {
@@ -286,7 +289,12 @@ func SelectDevice(devs []*Device) (*Device, error) {
 					chosenDev.mu.Unlock()
 				}
 			case <-timeout:
+				logger.Infof("reached timeout %d\n", index)
+				C.fido_dev_cancel(dev)
+				pollingDone <- 0
+				return
 			case <-quit:
+				logger.Infof("quitting %d\n", index)
 				C.fido_dev_cancel(dev)
 				pollingDone <- 0
 				return
