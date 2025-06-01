@@ -139,6 +139,9 @@ int fido_dev_set_io_functions(fido_dev_t *, const fido_dev_io_t *);
 int fido_dev_set_pin(fido_dev_t *, const char *, const char *);
 int fido_dev_set_transport_functions(fido_dev_t *, const fido_dev_transport_t *);
 
+int fido_dev_get_touch_begin(fido_dev_t *);
+int fido_dev_get_touch_status(fido_dev_t *, int *, int);
+
 size_t fido_assert_authdata_len(const fido_assert_t *, size_t);
 size_t fido_assert_clientdata_hash_len(const fido_assert_t *);
 size_t fido_assert_count(const fido_assert_t *);
