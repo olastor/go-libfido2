@@ -4,7 +4,7 @@ Go wrapper for libfido2.
 
 ```go
 import (
-    "github.com/keys-pub/go-libfido2"
+    "github.com/olastor/go-libfido2"
 )
 
 func ExampleDevice_Assertion() {
